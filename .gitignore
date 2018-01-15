@@ -5,3 +5,5 @@ replay*
 .idea/
 CMakeLists.txt
 
+viewer_latest*
+viewer_currentInstall.json
