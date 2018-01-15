@@ -1,8 +1,6 @@
 #!/bin/sh
 # build the program!
 # note: there will eventually be a separate build step for your bot, but for now it counts against your runtime.
-LIBRARIES="-lutil -ldl -lrt -lpthread -lgcc_s -lc -lm -L/battlecode-c/lib/ -lbattlecode"
-INCLUDES="-I/battlecode-c/include"
 
 # we provide this env variable for you
 if [ "$BC_PLATFORM" = 'LINUX' ]; then
@@ -20,10 +18,13 @@ fi
 debug=1
 
 if [ $debug -eq 1 ]; then
-  g++ -std=c++14 main.cpp -o main $LIBRARIES $INCLUDES -DDEBUG
+  EXTRA_FLAGS="-g -DBACKTRACE"
 else
-  g++ -std=c++14 main.cpp -o main $LIBRARIES $INCLUDES -O3
+  EXTRA_FLAGS="-O3 -DNDEBUG"
 fi
+
+g++ -std=c++14 *.cpp -c -Werror $INCLUDES $EXTRA_FLAGS
+g++ -std=c++14 *.o -o main $LIBRARIES $EXTRA_FLAGS
 
 # run the program!
 ./main
