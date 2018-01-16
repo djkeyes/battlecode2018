@@ -40,6 +40,12 @@ class Bot {
   void beforeLoop() {
     m_path_finder.computeAllPairsShortestPath();
     m_path_finder.computeConnectedComponents();
+
+    // TODO: manage research smarter
+    m_gc.queue_research(UnitType::Worker);
+    m_gc.queue_research(UnitType::Knight);
+    m_gc.queue_research(UnitType::Knight);
+    m_gc.queue_research(UnitType::Knight);
   }
 
   void turn() {
