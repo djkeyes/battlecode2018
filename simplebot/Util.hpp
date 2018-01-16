@@ -5,6 +5,8 @@
 #include <vector>
 #include "bcpp_api/bc.hpp"
 
+extern const std::vector<bc::Direction> directions_incl_center;
+
 extern const std::vector<bc::Direction> directions_cwise;
 extern std::vector<bc::Direction> directions_shuffled;
 

@@ -5,6 +5,18 @@
 
 using namespace bc;
 
+const std::vector<Direction> directions_incl_center = {
+    Direction::North,
+    Direction::Northeast,
+    Direction::East,
+    Direction::Southeast,
+    Direction::South,
+    Direction::Southwest,
+    Direction::West,
+    Direction::Northwest,
+    Direction::Center
+};
+
 const std::vector<Direction> directions_cwise = {
     Direction::North,
     Direction::Northeast,

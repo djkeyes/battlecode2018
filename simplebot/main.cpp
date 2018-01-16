@@ -92,8 +92,7 @@ class Bot {
       moveAllUnitsTowardEnemies(unit_tally);
     }
 
-    //moveIdleWorkersToKarbonite();
-    //collectKarbonite();
+    collectKarbonite(unit_tally);
   }
 
   void tryUnloadingAllFactories(UnitTally &unit_tally) {
@@ -330,7 +329,7 @@ class Bot {
         karbonite -= cost;
         // TODO: make a local wrapper around factory, so we can update the is_producing status without re-fetching
         // update the factory status, so further calls to is_factory_producing() return false
-        unit_tally.ids_to_units.insert(make_pair(factory_id, m_gc.get_unit(factory_id)));
+        unit_tally.ids_to_units[factory_id] = m_gc.get_unit(factory_id);
         if (karbonite < cost) {
           break;
         }
@@ -559,6 +558,66 @@ class Bot {
         m_gc.move_robot(id, dir);
         break;
       }
+    }
+  }
+
+  void collectKarbonite(UnitTally &unit_tally) {
+    for (const auto &worker_id : unit_tally.units_by_type[UnitType::Worker]) {
+      const Unit worker = m_gc.get_unit(worker_id);
+      if (worker.worker_has_acted()) {
+        continue;
+      }
+      if (worker.get_location().is_in_garrison()) {
+        continue;
+      }
+
+      MapLocation worker_loc = worker.get_map_location();
+      unsigned int most_karbs = 0;
+      const Direction *best_dir;
+      for (const Direction &dir : directions_incl_center) {
+        MapLocation loc = worker_loc.add(dir);
+        if (!m_path_finder.is_in_map_bounds(loc)) {
+          continue;
+        }
+        unsigned int karbs = m_gc.get_karbonite_at(loc);
+        if (karbs > most_karbs) {
+          most_karbs = karbs;
+          best_dir = &dir;
+        }
+      }
+      if (most_karbs > 0) {
+        m_gc.harvest(worker_id, *best_dir);
+        continue;
+      }
+
+      // no karbonite nearby? explore!
+      // this is tricky to do in a computational reasonable way, since nearly every tile could have karbonite
+      // we should probably make a coarse karbonite map, then path toward the coarse buckets
+      // for now just move randomly
+      if (worker.get_movement_cooldown() >= 10) {
+        continue;
+      }
+      bool moved = false;
+      for (int num_steps = 2; num_steps <= 4 && !moved; ++num_steps) {
+        for (const Direction &dir : directions_shuffled) {
+          MapLocation target = worker_loc.add_multiple(dir, num_steps);
+          if (m_path_finder.is_in_map_bounds(target) && m_gc.get_karbonite_at(target) > 0) {
+            pathTo(worker, target);
+            moved = true;
+            break;
+          }
+        }
+      }
+      if (!moved) {
+        // just move anywhere possible
+        for (const Direction &dir : directions_shuffled) {
+          if (m_gc.can_move(worker_id, dir)) {
+            pathTo(worker, worker_loc.add(dir));
+            break;
+          }
+        }
+      }
+
     }
   }
 
