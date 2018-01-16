@@ -23,7 +23,7 @@ else
   EXTRA_FLAGS="-O3 -DNDEBUG"
 fi
 
-g++ -std=c++14 *.cpp -c -Werror $INCLUDES $EXTRA_FLAGS
+g++ -std=c++14 *.cpp -c $INCLUDES $EXTRA_FLAGS
 g++ -std=c++14 *.o -o main $LIBRARIES $EXTRA_FLAGS
 
 # run the program!

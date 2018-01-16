@@ -3,6 +3,7 @@
 #include <list>
 #include <map>
 #include <set>
+#include <cmath>
 
 #include "bcpp_api/bc.hpp"
 
@@ -63,7 +64,6 @@ class Bot {
       tryBlueprinting<UnitType::Rocket>(unit_tally);
     }
     // then try building stuff, since this is basically free.
-    // TODO: coordinate worker actions better
     tryBuilding(unit_tally);
 
 
@@ -174,16 +174,94 @@ class Bot {
       }
     }
 
-    for (
-      const auto &factory_id : finished
-        ) {
+    for (const auto &factory_id : finished) {
       for (const auto &worker_id : m_construction_sites_to_workers[factory_id]) {
         m_workers_tasked_to_build.erase(worker_id);
       }
       m_construction_sites_to_workers.erase(factory_id);
     }
 
-    // TODO: have nearby workers path toward factories? and add them to the list once they're close enough?
+    // path nearby workers toward factories, and add them to the list once they're close enough
+
+    for (const auto &worker_id : tally.units_by_type[UnitType::Worker]) {
+      if (m_workers_tasked_to_build.find(worker_id) != m_workers_tasked_to_build.end()) {
+        continue;
+      }
+      // Suppose a construction site has H health remaining and W workers tasked to it. It will finish in
+      // F_1 = CEIL(H/(W*B)) turns (assuming workers add B health per turn).
+      // If our new worker takes T > F_1 turns to arrive, obviously don't bother.
+      // Otherwise, after T turns, the structure will have H - T*W*B health left, and will require a total of
+      // F_2 = T + CEIL((H - T*W*B) / (W+1)) turns.
+      // Don't bother going if F_1 - F_2 is small.
+
+      const Unit worker = m_gc.get_unit(worker_id);
+      if (worker.get_location().is_in_garrison()) {
+        // too confusing to estimate
+        continue;
+      }
+      const MapLocation worker_loc = worker.get_map_location();
+      int best_improvement = 2;
+      unsigned int best_site_id;
+      bool has_better_site = false;
+
+      int b = worker.get_worker_build_health();
+      for (const auto &site : m_construction_sites_to_workers) {
+        auto w = static_cast<int>(site.second.size());
+
+        const Unit building = m_gc.get_unit(site.first);
+        int h = building.get_max_health() - building.get_health();
+        int f_1 = 0;
+        if (w == 0) {
+          // maybe someone else will get there
+          ++w;
+          f_1 = 30;
+        }
+        int f_1_denom = w * b;
+        f_1 += (h + f_1_denom - 1) / f_1_denom;
+
+        // estimate travel time -- this isn't exact
+        MapLocation building_loc = building.get_map_location();
+        int t = static_cast<int>(round(
+            1.1f * (m_path_finder.getDist(worker_loc, building_loc) * (worker.get_movement_cooldown() / 10.0f)
+                    + worker.get_movement_heat() / 10.0f)));
+        if (t >= f_1 || t > 30) {
+          continue;
+        }
+
+        int f_2_denom = (w + 1) * b;
+        int f_2 = t + (h - w * b * t + f_2_denom - 1) / f_2_denom;
+        int improvement = f_1 - f_2;
+        if (improvement > best_improvement) {
+          best_improvement = improvement;
+          best_site_id = building.get_id();
+          has_better_site = true;
+        }
+      }
+
+      if (!has_better_site) {
+        continue;
+      }
+      // try pathing toward site
+      MapLocation site_loc = m_gc.get_unit(best_site_id).get_map_location();
+      PathFinder::DistType dist = m_path_finder.getDist(worker_loc, site_loc);
+      // note: this is dist, not distsq
+      if (dist > 1) {
+        pathTo(worker, site_loc);
+        // update worker after move
+        Unit newworker = m_gc.get_unit(worker_id);
+        tally.ids_to_units[worker_id] = newworker;
+        dist = m_path_finder.getDist(newworker.get_map_location(), site_loc);
+      }
+      if (dist <= 1) {
+        // add to data structure
+        m_workers_tasked_to_build.insert(worker_id);
+        m_construction_sites_to_workers[best_site_id].push_back(worker_id);
+        // try building
+        // TODO this requires lots of duplicated logic
+      }
+
+    }
+
   }
 
   void tryReplicatingOrProducingWorkers(UnitTally &unit_tally) {
@@ -373,30 +451,25 @@ class Bot {
         // are we out of range?
         bool in_range;
         if (closest_distsq <= our_unit->get_attack_range()) {
-          LOG("already close!" << endl);
           in_range = true;
         } else {
-          LOG("pathing to!" << endl);
-          pathTo(*our_unit, closest_maploc);
+          pathNaivelyTo(*our_unit, closest_maploc);
           Location loc = m_gc.get_unit(our_unit->get_id()).get_location();
           if (loc.is_on_map()) {
-            LOG("pathed!" << endl);
             MapLocation our_new_loc = loc.get_map_location();
             in_range = our_new_loc.distance_squared_to(closest_maploc) <= our_unit->get_attack_range();
-
-            LOG("now in range? " << in_range << endl);
           } else {
-            LOG("in garrison!" << endl);
             in_range = false;
           }
         }
 
         if (in_range) {
           // TODO: replace this constant
-          LOG("our unit: " << m_gc.get_unit(our_unit->get_id()) << endl);
-          LOG("their unit: " << m_gc.get_unit(closest_enemy->get_id()) << endl);
           if (our_unit->get_attack_heat() < 10) {
-            m_gc.attack(our_unit->get_id(), closest_enemy->get_id());
+            // TODO: this check shouldn't be necessary. why is in_range innaccurate?
+            if (m_gc.can_attack(our_unit->get_id(), closest_enemy->get_id())) {
+              m_gc.attack(our_unit->get_id(), closest_enemy->get_id());
+            }
           }
         }
       }
@@ -427,7 +500,43 @@ class Bot {
   const vector<int> rotations_toward_or_sideways = {0, 1, -1, 2, -2};
   const vector<int> rotations_sort_of_toward = {0, 1, -1, 2, -2, 3, -3};
 
+  /*
+   * For long-distance pathing, take advantage of the pre-computed shortest path
+   */
   void pathTo(const Unit &unit, const MapLocation &target) {
+    if (unit.get_movement_heat() >= 10) {
+      return;
+    }
+    if (!unit.is_on_map()) {
+      // this unit is still garrisoned.
+      return;
+    }
+    MapLocation unit_loc = unit.get_map_location();
+    unsigned int id = unit.get_id();
+
+    const Direction *best_dir = nullptr;
+    // we could set this to the center direction if we wanted to do no worse.
+    PathFinder::DistType best_dist = m_path_finder.infinity();
+    for (const auto &dir: directions_shuffled) {
+      MapLocation next = unit_loc.add(dir);
+
+      if (!m_gc.can_move(id, dir)) {
+        continue;
+      }
+      PathFinder::DistType dist = m_path_finder.getDist(next, target);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_dir = &dir;
+      }
+    }
+
+    if (best_dir != nullptr) {
+      m_gc.move_robot(id, *best_dir);
+    }
+
+  }
+
+  void pathNaivelyTo(const Unit &unit, const MapLocation &target) {
     if (!unit.is_on_map()) {
       // this unit is still garrisoned.
       return;
@@ -458,7 +567,7 @@ class Bot {
   DecisionMaker decision_maker;
   const Team m_team;
   const Planet m_planet;
-  const PlanetMap& m_map;
+  const PlanetMap &m_map;
   PathFinder m_path_finder;
 
   map<unsigned int, list<unsigned int>> m_construction_sites_to_workers;

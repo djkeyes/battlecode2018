@@ -58,9 +58,17 @@ void PathFinder::computeAllPairsShortestPath() {
   m_all_pair_distances = vector<vector<DistType >>(m_sidelength * m_sidelength,
                                                    vector<DistType>(m_sidelength * m_sidelength, m_infinity));
 
+  m_passable = vector<bool>(m_sidelength * m_sidelength);
+  for (DistType r = 0; r < m_sidelength; ++r) {
+    for (DistType c = 0; c < m_sidelength; ++c) {
+      m_passable[index(r, c)] = m_map.is_passable_terrain_at(MapLocation(m_planet, c, r));
+    }
+  }
+
+
   for (DistType r_start = 0; r_start < m_sidelength; ++r_start) {
     for (DistType c_start = 0; c_start < m_sidelength; ++c_start) {
-      bfs(MapLocation(m_planet, r_start, c_start), m_all_pair_distances[index(r_start, c_start)]);
+      bfs(RowCol(r_start, c_start), m_all_pair_distances[index(r_start, c_start)]);
     }
   }
 
@@ -88,8 +96,8 @@ void PathFinder::print_dist_slice() {
 #endif
 }
 
-void PathFinder::bfs(const MapLocation &start, vector<DistType> &distances) {
-  if (!m_map.is_passable_terrain_at(start)) {
+void PathFinder::bfs(const RowCol &start, vector<DistType> &distances) {
+  if (!m_passable[index(start)]) {
     return;
   }
   DistType next_dist_to_assign = 0;
@@ -98,12 +106,12 @@ void PathFinder::bfs(const MapLocation &start, vector<DistType> &distances) {
   // TODO: might be faster to use stacks here. we could even pre-allocate vectors, since we can compute an upper
   // bound on the number of frontier vertices relatively easy
   list<RowCol> frontier, next_frontier;
-  frontier.emplace_back(start.get_y(), start.get_x());
+  frontier.push_back(start);
 
   while (!frontier.empty()) {
     const RowCol &cur = frontier.front();
 
-    for (const RowCol & dir : dirs) {
+    for (const RowCol &dir : dirs) {
       const RowCol next = cur + dir;
 
       // bounds check
@@ -116,7 +124,7 @@ void PathFinder::bfs(const MapLocation &start, vector<DistType> &distances) {
         // already visited
         continue;
       }
-      if (m_map.is_passable_terrain_at(MapLocation(m_planet, next.second, next.first))) {
+      if (m_passable[index(next)]) {
         next_dist = next_dist_to_assign;
         next_frontier.push_back(next);
       }

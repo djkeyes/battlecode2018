@@ -8,6 +8,7 @@
 
 #include <bcpp_api/bc.hpp>
 
+// TODO: on earth, also store some info about mars, so we can launch rockets.
 class PathFinder {
  public:
   // if maps ever become larger than around 128x128, this needs to be made larger
@@ -18,9 +19,9 @@ class PathFinder {
   explicit PathFinder(const bc::GameController &gc, const bc::PlanetMap &map)
       : m_gc(gc),
         m_map(map),
-        m_sidelength(m_map.get_width()),
-        m_infinity((m_sidelength + 2) *
-                   (m_sidelength + 2)),
+        m_sidelength(static_cast<DistType >(m_map.get_width())),
+        m_infinity((m_sidelength + static_cast<DistType >(2)) *
+                   (m_sidelength + static_cast<DistType >(2))),
         m_planet(m_map.get_planet()) {
   }
 
@@ -28,6 +29,31 @@ class PathFinder {
   void computeAllPairsShortestPath();
 
   void computeConnectedComponents();
+
+  /*
+   * Check if the location is in the map bounds using only the map dimensions (doesn't check correct planet).
+   */
+  bool is_in_map_bounds(const bc::MapLocation &loc) {
+    int x = loc.get_x();
+    int y = loc.get_y();
+    return x >= 0 && y >= 0 && x < m_sidelength && y < m_sidelength;
+  }
+
+  DistType getDist(const RowCol &from, const RowCol &to) {
+    return m_all_pair_distances[index(from)][index(to)];
+  }
+
+  DistType getDist(const DistType &from_row, const DistType &from_col, const DistType &to_row, const DistType &to_col) {
+    return m_all_pair_distances[index(from_row, from_col)][index(to_row, to_col)];
+  }
+
+  DistType getDist(const bc::MapLocation &from, const bc::MapLocation &to) {
+    return m_all_pair_distances[index(from)][index(to)];
+  }
+
+  DistType infinity() {
+    return m_infinity;
+  }
 
  private:
 
@@ -37,8 +63,10 @@ class PathFinder {
 
   DistType index(const bc::MapLocation &loc);
 
-  void bfs(const bc::MapLocation &start, std::vector<DistType> &distances);
+  void bfs(const RowCol &start, std::vector<DistType> &distances);
+
   std::vector<std::vector<DistType >> m_all_pair_distances;
+  std::vector<bool> m_passable;
 
   void print_dist_slice();
 

@@ -20,6 +20,15 @@ void debug_print_status_update(const GameController &gc) {
   }
 
   LOG(" -- Turn " << gc.get_round());
+
+  unsigned int time_left = gc.get_time_left_ms();
+  static unsigned int last_time_left = 0;
+  // 50ms free per turn
+  unsigned int elapsed = last_time_left + 50 - time_left;
+  last_time_left = time_left;
+  LOG(" -- Time " << time_left << "ms");
+  LOG(" -- Elpsd " << elapsed << "ms");
+
   LOG(" -- Karb " << gc.get_karbonite());
 
 
@@ -114,7 +123,12 @@ std::ostream &operator<<(std::ostream &stream, const bc::Unit &unit) {
   }
   stream << "]";
 
-  // TODO: movement heat, attack heat, ability heat
+  stream << "[heats:{";
+  stream << "move:" << unit.get_movement_heat() << "|";
+  stream << "atk:" << unit.get_attack_heat() << "|";
+  stream << "abil:" << unit.get_ability_heat();
+  stream << "}]";
+
   // TODO: worker has_acted
   // TODO: ranger is_sniping, countdown, target loc
   // TODO: structure is_built
