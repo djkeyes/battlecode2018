@@ -19,9 +19,10 @@ class PathFinder {
   explicit PathFinder(const bc::GameController &gc, const bc::PlanetMap &map)
       : m_gc(gc),
         m_map(map),
-        m_sidelength(static_cast<DistType >(m_map.get_width())),
-        m_infinity((m_sidelength + static_cast<DistType >(2)) *
-                   (m_sidelength + static_cast<DistType >(2))),
+        m_rows(static_cast<DistType >(m_map.get_height())),
+        m_cols(static_cast<DistType >(m_map.get_width())),
+        m_infinity((m_rows + static_cast<DistType >(2)) *
+                   (m_cols + static_cast<DistType >(2))),
         m_planet(m_map.get_planet()) {
   }
 
@@ -36,7 +37,7 @@ class PathFinder {
   bool is_in_map_bounds(const bc::MapLocation &loc) {
     int x = loc.get_x();
     int y = loc.get_y();
-    return x >= 0 && y >= 0 && x < m_sidelength && y < m_sidelength;
+    return x >= 0 && y >= 0 && x < m_cols && y < m_rows;
   }
 
   DistType getDist(const RowCol &from, const RowCol &to) {
@@ -72,7 +73,8 @@ class PathFinder {
 
   const bc::GameController &m_gc;
   const bc::PlanetMap &m_map;
-  const DistType m_sidelength;
+  const DistType m_rows;
+  const DistType m_cols;
   const DistType m_infinity;
   const bc::Planet m_planet;
 };

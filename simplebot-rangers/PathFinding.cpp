@@ -44,30 +44,30 @@ PathFinder::DistType PathFinder::index(const RowCol &rc) {
 }
 
 PathFinder::DistType PathFinder::index(const DistType &row, const DistType &col) {
-  return row * m_sidelength + col;
+  return row * m_cols + col;
 }
 
 PathFinder::DistType PathFinder::index(const MapLocation &loc) {
-  return static_cast<DistType>(loc.get_y()) * m_sidelength + static_cast<DistType>(loc.get_x());
+  return static_cast<DistType>(loc.get_y()) * m_cols + static_cast<DistType>(loc.get_x());
 }
 
 void PathFinder::computeAllPairsShortestPath() {
   LOG("Starting all pairs shortest path computation!" << endl);
   unsigned int start_time_left = debug_get_time_left(m_gc);
 
-  m_all_pair_distances = vector<vector<DistType >>(m_sidelength * m_sidelength,
-                                                   vector<DistType>(m_sidelength * m_sidelength, m_infinity));
+  m_all_pair_distances = vector<vector<DistType >>(m_rows * m_cols,
+                                                   vector<DistType>(m_rows * m_cols, m_infinity));
 
-  m_passable = vector<bool>(m_sidelength * m_sidelength);
-  for (DistType r = 0; r < m_sidelength; ++r) {
-    for (DistType c = 0; c < m_sidelength; ++c) {
+  m_passable = vector<bool>(m_rows * m_cols);
+  for (DistType r = 0; r < m_rows; ++r) {
+    for (DistType c = 0; c < m_cols; ++c) {
       m_passable[index(r, c)] = m_map.is_passable_terrain_at(MapLocation(m_planet, c, r));
     }
   }
 
 
-  for (DistType r_start = 0; r_start < m_sidelength; ++r_start) {
-    for (DistType c_start = 0; c_start < m_sidelength; ++c_start) {
+  for (DistType r_start = 0; r_start < m_rows; ++r_start) {
+    for (DistType c_start = 0; c_start < m_cols; ++c_start) {
       bfs(RowCol(r_start, c_start), m_all_pair_distances[index(r_start, c_start)]);
     }
   }
@@ -81,8 +81,8 @@ void PathFinder::computeAllPairsShortestPath() {
 
 void PathFinder::print_dist_slice() {
 #ifndef NDEBUG
-  for (DistType r_start = 0; r_start < m_sidelength; ++r_start) {
-    for (DistType c_start = 0; c_start < m_sidelength; ++c_start) {
+  for (DistType r_start = 0; r_start < m_rows; ++r_start) {
+    for (DistType c_start = 0; c_start < m_cols; ++c_start) {
       LOG("|");
       DistType dist = m_all_pair_distances[index(r_start, c_start)][index(0, 5)];
       if (dist == m_infinity) {
@@ -116,7 +116,7 @@ void PathFinder::bfs(const RowCol &start, vector<DistType> &distances) {
 
       // bounds check
       // note that an index of -1 underflows to 2^N-1
-      if (next.first >= m_sidelength || next.second >= m_sidelength) {
+      if (next.first >= m_rows || next.second >= m_cols) {
         continue;
       }
       DistType &next_dist = distances[index(next)];
