@@ -5,7 +5,7 @@ using namespace bc;
 using std::cout;
 using std::endl;
 
-void print_status_update(GameController &gc) {
+void debug_print_status_update(const GameController &gc) {
 #ifndef NDEBUG
   if (gc.get_team() == Team::Red) {
     LOG("RED-");
@@ -124,3 +124,11 @@ std::ostream &operator<<(std::ostream &stream, const bc::Unit &unit) {
   return stream;
 }
 
+
+unsigned int debug_get_time_left(const GameController& gc) {
+#ifdef NDEBUG
+  return 0;
+#else
+  return gc.get_time_left_ms();
+#endif
+}

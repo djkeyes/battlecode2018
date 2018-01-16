@@ -13,7 +13,8 @@
 #  define LOG(x) do { (std::cout << x); } while(false)
 #endif
 
-void print_status_update(bc::GameController &gc);
+void debug_print_status_update(const bc::GameController &gc);
+unsigned int debug_get_time_left(const bc::GameController &gc);
 
 /*
  * Pretty formatting for units

@@ -8,6 +8,7 @@
 
 #include "Debug.h"
 #include "DecisionMaker.h"
+#include "PathFinding.h"
 #include "Util.hpp"
 
 using namespace bc;
@@ -24,9 +25,20 @@ using std::set;
 
 class Bot {
  public:
-  explicit Bot(GameController &gc) : m_gc(gc), decision_maker(gc), m_team(gc.get_team()), m_planet(gc.get_planet()) {
+  explicit Bot(GameController &gc) :
+      m_gc(gc),
+      decision_maker(gc),
+      m_team(gc.get_team()),
+      m_planet(gc.get_planet()),
+      m_map(m_gc.get_starting_planet(m_planet)),
+      m_path_finder(gc, m_map) {
     // nothing for now
 
+  }
+
+  void beforeLoop() {
+    m_path_finder.computeAllPairsShortestPath();
+    m_path_finder.computeConnectedComponents();
   }
 
   void turn() {
@@ -191,11 +203,10 @@ class Bot {
           MapLocation worker_loc = worker.get_map_location();
           for (const Direction &d : directions_shuffled) {
             MapLocation target = worker_loc.add(d);
-            const PlanetMap &map = m_gc.get_starting_planet(m_planet);
             if (target.get_x() < 0
                 || target.get_y() < 0
-                || target.get_x() >= map.get_width()
-                || target.get_y() >= map.get_height()) {
+                || target.get_x() >= m_map.get_width()
+                || target.get_y() >= m_map.get_height()) {
               continue;
             }
             if (m_gc.is_occupiable(target)) {
@@ -447,6 +458,8 @@ class Bot {
   DecisionMaker decision_maker;
   const Team m_team;
   const Planet m_planet;
+  const PlanetMap& m_map;
+  PathFinder m_path_finder;
 
   map<unsigned int, list<unsigned int>> m_construction_sites_to_workers;
   set<unsigned int> m_workers_tasked_to_build;
@@ -463,9 +476,11 @@ int main(int argv, char **argc) {
 
   CHECK_ERRORS();
 
+  bot.beforeLoop();
+
   // loop through the whole game.
   while (true) {
-    print_status_update(gc);
+    debug_print_status_update(gc);
     shuffle_directions();
     bot.turn();
 
