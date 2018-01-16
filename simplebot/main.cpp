@@ -594,7 +594,7 @@ class Bot {
       // this is tricky to do in a computational reasonable way, since nearly every tile could have karbonite
       // we should probably make a coarse karbonite map, then path toward the coarse buckets
       // for now just move randomly
-      if (worker.get_movement_cooldown() >= 10) {
+      if (worker.get_movement_heat() >= 10) {
         continue;
       }
       bool moved = false;
