@@ -38,6 +38,9 @@ class PathFinder {
   DistType index(const bc::MapLocation &loc);
 
   void bfs(const bc::MapLocation &start, std::vector<DistType> &distances);
+  std::vector<std::vector<DistType >> m_all_pair_distances;
+
+  void print_dist_slice();
 
   const bc::GameController &m_gc;
   const bc::PlanetMap &m_map;
