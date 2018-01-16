@@ -67,7 +67,8 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
     # Start the unix stream server
     main_server = server.start_server(sock_file, game, dockers)
 
-    viewer_server = server.start_viewer_server(PORT, game) if args['use_viewer'] else None
+    viewer_server = server.start_viewer_server(PORT, game) 
+    print(viewer_server)
 
     try:
         # Start the docker instances
@@ -104,6 +105,7 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
             print(e)
 
         if viewer_server is not None:
+            print("Here?")
             viewer_server.shutdown()
 
     match_file = {}
@@ -206,7 +208,8 @@ def create_game(args):
                        time_pool=args['time_pool'],
                        time_additional=args['time_additional'],
                        terminal_viewer=args['terminal_viewer'],
-                       extra_delay=args['extra_delay'])
+                       extra_delay=args['extra_delay'],
+                       map_name=args['map_name'])
 
     working_dir = abspath("working_dir")
     prepare_working_directory(working_dir)
