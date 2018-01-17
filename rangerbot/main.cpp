@@ -9,6 +9,7 @@
 
 #include "Debug.h"
 #include "DecisionMaker.h"
+#include "MapPreprocessor.h"
 #include "PathFinding.h"
 #include "Util.hpp"
 
@@ -32,14 +33,14 @@ class Bot {
       m_team(gc.get_team()),
       m_planet(gc.get_planet()),
       m_map(m_gc.get_starting_planet(m_planet)),
-      m_path_finder(gc, m_map) {
+      m_path_finder(gc, m_map),
+      m_map_preprocessor(gc, m_path_finder, m_map) {
     // nothing for now
 
   }
 
   void beforeLoop() {
-    m_path_finder.computeAllPairsShortestPath();
-    m_path_finder.computeConnectedComponents();
+    m_map_preprocessor.process();
 
     // TODO: manage research smarter
     m_gc.queue_research(UnitType::Worker);
@@ -223,7 +224,7 @@ class Bot {
           f_1 = 30;
         }
         int f_1_denom = w * b;
-        f_1 += (h + f_1_denom - 1) / f_1_denom;
+        f_1 += pos_int_div_ceil(h, f_1_denom);
 
         // estimate travel time -- this isn't exact
         MapLocation building_loc = building.get_map_location();
@@ -235,7 +236,7 @@ class Bot {
         }
 
         int f_2_denom = (w + 1) * b;
-        int f_2 = t + (h - w * b * t + f_2_denom - 1) / f_2_denom;
+        int f_2 = t + pos_int_div_ceil(h - w * b * t, f_2_denom);;
         int improvement = f_1 - f_2;
         if (improvement > best_improvement) {
           best_improvement = improvement;
@@ -635,6 +636,7 @@ class Bot {
   const Planet m_planet;
   const PlanetMap &m_map;
   PathFinder m_path_finder;
+  MapPreprocessor m_map_preprocessor;
 
   map<unsigned int, list<unsigned int>> m_construction_sites_to_workers;
   set<unsigned int> m_workers_tasked_to_build;

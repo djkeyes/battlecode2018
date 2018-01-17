@@ -27,7 +27,7 @@ class PathFinder {
   }
 
 
-  void computeAllPairsShortestPath();
+  void computeAllPairsShortestPath(const std::vector<bool> &passable);
 
   void computeConnectedComponents();
 
@@ -56,18 +56,17 @@ class PathFinder {
     return m_infinity;
   }
 
- private:
-
   DistType index(const RowCol &rc);
 
   DistType index(const DistType &row, const DistType &col);
 
   DistType index(const bc::MapLocation &loc);
 
-  void bfs(const RowCol &start, std::vector<DistType> &distances);
+ private:
+
+  void bfs(const RowCol &start, std::vector<DistType> &distances, const std::vector<bool> &passable);
 
   std::vector<std::vector<DistType >> m_all_pair_distances;
-  std::vector<bool> m_passable;
 
   void print_dist_slice();
 

@@ -51,24 +51,16 @@ PathFinder::DistType PathFinder::index(const MapLocation &loc) {
   return static_cast<DistType>(loc.get_y()) * m_cols + static_cast<DistType>(loc.get_x());
 }
 
-void PathFinder::computeAllPairsShortestPath() {
+void PathFinder::computeAllPairsShortestPath(const vector<bool> &passable) {
   LOG("Starting all pairs shortest path computation!" << endl);
   unsigned int start_time_left = debug_get_time_left(m_gc);
 
   m_all_pair_distances = vector<vector<DistType >>(m_rows * m_cols,
                                                    vector<DistType>(m_rows * m_cols, m_infinity));
 
-  m_passable = vector<bool>(m_rows * m_cols);
-  for (DistType r = 0; r < m_rows; ++r) {
-    for (DistType c = 0; c < m_cols; ++c) {
-      m_passable[index(r, c)] = m_map.is_passable_terrain_at(MapLocation(m_planet, c, r));
-    }
-  }
-
-
   for (DistType r_start = 0; r_start < m_rows; ++r_start) {
     for (DistType c_start = 0; c_start < m_cols; ++c_start) {
-      bfs(RowCol(r_start, c_start), m_all_pair_distances[index(r_start, c_start)]);
+      bfs(RowCol(r_start, c_start), m_all_pair_distances[index(r_start, c_start)], passable);
     }
   }
 
@@ -96,8 +88,8 @@ void PathFinder::print_dist_slice() {
 #endif
 }
 
-void PathFinder::bfs(const RowCol &start, vector<DistType> &distances) {
-  if (!m_passable[index(start)]) {
+void PathFinder::bfs(const RowCol &start, vector<DistType> &distances, const vector<bool> &passable) {
+  if (!passable[index(start)]) {
     return;
   }
   DistType next_dist_to_assign = 0;
@@ -124,7 +116,7 @@ void PathFinder::bfs(const RowCol &start, vector<DistType> &distances) {
         // already visited
         continue;
       }
-      if (m_passable[index(next)]) {
+      if (passable[index(next)]) {
         next_dist = next_dist_to_assign;
         next_frontier.push_back(next);
       }
