@@ -51,8 +51,8 @@ class Bot {
       // TODO: manage research smarter
       m_gc.queue_research(UnitType::Worker);
       m_gc.queue_research(UnitType::Ranger);
-      m_gc.queue_research(UnitType::Rocket);
       m_gc.queue_research(UnitType::Mage);
+      m_gc.queue_research(UnitType::Rocket);
       m_gc.queue_research(UnitType::Mage);
       m_gc.queue_research(UnitType::Mage);
       m_gc.queue_research(UnitType::Rocket);
@@ -555,66 +555,159 @@ class Bot {
     // again, these lookups are super slow
 
     for (const Unit *our_unit : units) {
-      MapLocation our_loc = getMapLocationOrGarrisonMapLocation(*our_unit, m_gc);
-      const Unit *closest_enemy = nullptr;
-      MapLocation closest_maploc;
-      unsigned int closest_distsq = 2 * 51 * 51;
-      for (auto enemy_iter = enemy_units.cbegin(); enemy_iter != enemy_units.cend();) {
-        const Unit &enemy_unit = *enemy_iter;
-        // it might already be dead
-        if (!m_gc.has_unit(enemy_unit.get_id())) {
-          // remove from list while iterating
-          enemy_units.erase(enemy_iter++);
-          continue;
-        }
-        MapLocation enemy_loc = getMapLocationOrGarrisonMapLocation(enemy_unit, m_gc);
-        unsigned int distsq = our_loc.distance_squared_to(enemy_loc);
-        if (distsq < closest_distsq) {
-          closest_enemy = &enemy_unit;
-          closest_maploc = enemy_loc;
-          closest_distsq = distsq;
-        }
-        ++enemy_iter;
-      }
-
-      if (closest_enemy == nullptr) {
-        // false alarm
-        // TODO: add back to safe list
-        continue;
-      }
-
       if (our_unit->get_unit_type() == UnitType::Worker) {
-        // run away!
-        Direction away = closest_maploc.direction_to(our_loc);
-        pathInDirection(*our_unit, away);
+        tryMicroingWorker(*our_unit, enemy_units);
       } else {
-        // are we out of range?
-        bool in_range;
-        if (closest_distsq <= our_unit->get_attack_range()) {
-          in_range = true;
-        } else {
-          pathNaivelyTo(*our_unit, closest_maploc);
-          Location loc = m_gc.get_unit(our_unit->get_id()).get_location();
-          if (loc.is_on_map()) {
-            MapLocation our_new_loc = loc.get_map_location();
-            in_range = our_new_loc.distance_squared_to(closest_maploc) <= our_unit->get_attack_range();
-          } else {
-            in_range = false;
-          }
-        }
-
-        if (in_range) {
-          // TODO: replace this constant
-          if (our_unit->get_attack_heat() < 10) {
-            // TODO: this check shouldn't be necessary. why is in_range innaccurate?
-            if (m_gc.can_attack(our_unit->get_id(), closest_enemy->get_id())) {
-              m_gc.attack(our_unit->get_id(), closest_enemy->get_id());
-            }
-          }
-        }
+        // TODO: should split this logic up for different attackers
+        tryMicroing(*our_unit, enemy_units);
       }
     }
 
+  }
+
+  // TODO: move to micro file
+  const unsigned int effective_ranger_range = 72;
+  const unsigned int effective_mage_range = 45;
+  const unsigned int effective_knight_range = 5;
+
+  unsigned int getEffectiveRange(const UnitType &type) {
+    // range + 1 movement
+    switch (type) {
+      case UnitType::Ranger:
+        return effective_ranger_range;
+      case UnitType::Mage:
+        return effective_mage_range;
+      case UnitType::Knight:
+        return effective_knight_range;
+    }
+    return 0;
+  }
+
+  void tryMicroingWorker(const Unit &worker, list<Unit> &enemy_units) {
+    MapLocation our_loc = getMapLocationOrGarrisonMapLocation(worker, m_gc);
+    const Unit *closest_enemy = nullptr;
+    MapLocation closest_maploc;
+    unsigned int closest_distsq = 2 * 51 * 51;
+    for (auto enemy_iter = enemy_units.cbegin(); enemy_iter != enemy_units.cend();) {
+      const Unit &enemy_unit = *enemy_iter;
+      // it might already be dead
+      if (!m_gc.has_unit(enemy_unit.get_id())) {
+        // remove from list while iterating
+        enemy_units.erase(enemy_iter++);
+        continue;
+      }
+      MapLocation enemy_loc = getMapLocationOrGarrisonMapLocation(enemy_unit, m_gc);
+      unsigned int distsq = our_loc.distance_squared_to(enemy_loc);
+      if (distsq < closest_distsq && distsq <= getEffectiveRange(enemy_unit.get_unit_type())) {
+        closest_enemy = &enemy_unit;
+        closest_maploc = enemy_loc;
+        closest_distsq = distsq;
+      }
+      ++enemy_iter;
+    }
+
+    if (closest_enemy == nullptr) {
+      // false alarm
+      // TODO: add back to safe list
+      return;
+    }
+
+    Direction away = closest_maploc.direction_to(our_loc);
+    pathInDirection(worker, away);
+  }
+
+  void tryMicroing(const Unit &unit, list<Unit> &enemy_units) {
+    MapLocation our_loc = getMapLocationOrGarrisonMapLocation(unit, m_gc);
+    const Unit *closest_enemy = nullptr;
+    MapLocation closest_maploc;
+    unsigned int closest_distsq = 2 * 51 * 51;
+
+    const Unit *weakest_attacker_in_range = nullptr;
+    unsigned int weakest_attacker_health = 10000;
+    const Unit *weakest_nonattacker_in_range = nullptr;
+    unsigned int weakest_nonattacker_health = 10000;
+
+    unsigned int my_range_sq = unit.get_attack_range();
+
+    for (auto enemy_iter = enemy_units.cbegin(); enemy_iter != enemy_units.cend();) {
+      const Unit &enemy_unit = *enemy_iter;
+      // it might already be dead
+      if (!m_gc.has_unit(enemy_unit.get_id())) {
+        // remove from list while iterating
+        enemy_units.erase(enemy_iter++);
+        continue;
+      }
+      MapLocation enemy_loc = getMapLocationOrGarrisonMapLocation(enemy_unit, m_gc);
+      unsigned int distsq = our_loc.distance_squared_to(enemy_loc);
+      if (distsq <= my_range_sq) {
+        unsigned int enemy_health = enemy_unit.get_health();
+        if (enemy_unit.is_robot() && enemy_unit.get_damage() > 0) {
+          if (enemy_health < weakest_attacker_health) {
+            weakest_attacker_health = enemy_health;
+            weakest_attacker_in_range = &enemy_unit;
+          }
+        } else {
+          if (enemy_health < weakest_nonattacker_health) {
+            weakest_nonattacker_health = enemy_health;
+            weakest_nonattacker_in_range = &enemy_unit;
+          }
+        }
+      }
+
+      if (distsq < closest_distsq) {
+        closest_enemy = &enemy_unit;
+        closest_maploc = enemy_loc;
+        closest_distsq = distsq;
+      }
+      ++enemy_iter;
+    }
+
+    // TODO: take into account situation where we take a step forward and they take a step back.
+    // we can ignore anyone if it's still safe after that
+    if (closest_enemy == nullptr) {
+      // false alarm
+      // TODO: add back to safe list
+      return;
+    }
+
+    const Unit *best_target = nullptr;
+    // are we out of range?
+    bool in_range;
+    if (weakest_attacker_in_range != nullptr) {
+      in_range = true;
+      best_target = weakest_attacker_in_range;
+    } else if (weakest_nonattacker_in_range != nullptr) {
+      in_range = true;
+      best_target = weakest_nonattacker_in_range;
+    } else {
+      best_target = closest_enemy;
+      if (closest_distsq <= my_range_sq) {
+        in_range = true;
+      } else {
+        pathNaivelyTo(unit, closest_maploc);
+        Location loc = m_gc.get_unit(unit.get_id()).get_location();
+        if (loc.is_on_map()) {
+          MapLocation our_new_loc = loc.get_map_location();
+          in_range = our_new_loc.distance_squared_to(closest_maploc) <= my_range_sq;
+        } else {
+          in_range = false;
+        }
+      }
+    }
+    // TODO: if we haven't moved yet, we might still want to move somewhere
+    // in large combat situations, we should probably just move away from the closest enemy
+    // in 1:1 situations, we should kite slower units with shorter range, but charge units with the same range so we
+    // get the first shot.
+
+    if (in_range) {
+      // TODO: replace this constant
+      if (unit.get_attack_heat() < 10) {
+        // TODO: this check shouldn't be necessary. why is in_range innaccurate?
+        if (m_gc.can_attack(unit.get_id(), best_target->get_id())) {
+          m_gc.attack(unit.get_id(), best_target->get_id());
+        }
+      }
+    }
   }
 
   void tryMoveTowardEnemies(const list<Unit> &enemy_units, const list<const Unit *> units) {
