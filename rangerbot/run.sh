@@ -17,14 +17,16 @@ fi
 
 debug=1
 
+FLAGS="-fno-rtti -fno-exceptions -march=native"
+
 if [ $debug -eq 1 ]; then
   EXTRA_FLAGS="-g -DBACKTRACE"
 else
   EXTRA_FLAGS="-O3 -DNDEBUG"
 fi
 
-g++ -std=c++14 *.cpp -c $INCLUDES $EXTRA_FLAGS
-g++ -std=c++14 *.o -o main $LIBRARIES $EXTRA_FLAGS
+g++ -std=c++14 *.cpp -c $INCLUDES $FLAGS $EXTRA_FLAGS
+g++ -std=c++14 *.o -o main $LIBRARIES $FLAGS $EXTRA_FLAGS
 
 # run the program!
 ./main
