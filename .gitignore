@@ -4,6 +4,8 @@ replay*
 # clion stuff
 .idea/
 CMakeLists.txt
+*cmake-build*
 
+# viewer stuff
 viewer_latest*
 viewer_currentInstall.json
