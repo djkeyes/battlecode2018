@@ -3,6 +3,7 @@
 #include <cassert>
 #include <list>
 #include <map>
+#include <memory>
 #include <set>
 #include <cmath>
 
@@ -13,6 +14,7 @@
 #include "MapPreprocessor.h"
 #include "PathFinding.h"
 #include "Util.hpp"
+#include "Messenger.h"
 
 using namespace bc;
 using std::vector;
@@ -21,6 +23,7 @@ using std::map;
 using std::list;
 using std::endl;
 using std::set;
+using std::unique_ptr;
 
 // TODO: cache more things from GameController
 // Specifically, defined some things that only need to be updated once per turn (ie karbonite, and compute further updates locally), and some things that only need to be updated once per game.
@@ -35,7 +38,8 @@ class Bot {
       m_planet(gc.get_planet()),
       m_map(m_gc.get_starting_planet(m_planet)),
       m_path_finder(gc, m_map),
-      m_map_preprocessor(gc, m_path_finder, m_map) {
+      m_map_preprocessor(gc, m_path_finder, m_map),
+      m_messenger(gc) {
     // nothing for now
 
   }
@@ -43,18 +47,59 @@ class Bot {
   void beforeLoop() {
     m_map_preprocessor.process();
 
-    // TODO: manage research smarter
-    m_gc.queue_research(UnitType::Worker);
-    m_gc.queue_research(UnitType::Ranger);
-    m_gc.queue_research(UnitType::Mage);
-    m_gc.queue_research(UnitType::Mage);
-    m_gc.queue_research(UnitType::Mage);
+    if (m_planet == Planet::Earth) {
+      // TODO: manage research smarter
+      m_gc.queue_research(UnitType::Worker);
+      m_gc.queue_research(UnitType::Ranger);
+      m_gc.queue_research(UnitType::Rocket);
+      m_gc.queue_research(UnitType::Mage);
+      m_gc.queue_research(UnitType::Mage);
+      m_gc.queue_research(UnitType::Mage);
+      m_gc.queue_research(UnitType::Rocket);
+      m_gc.queue_research(UnitType::Rocket);
+      m_gc.queue_research(UnitType::Mage);
+      m_gc.queue_research(UnitType::Worker);
+      m_gc.queue_research(UnitType::Worker);
+      m_gc.queue_research(UnitType::Worker);
+    } else {
+      // TODO
+      // for now, just choose some random tiles that are multiple of 3 (to avoid collisions)
+      list<MapLocation> landing_positions;
+      set<unsigned int> hashes;
+      for (int tries = 0;
+           tries < m_messenger.max_num_landing_locations * 3
+           && landing_positions.size() < m_messenger.max_num_landing_locations;
+           ++tries) {
+        unsigned int x = 3 * (rand() % (m_map.get_width() / 3));
+        unsigned int y = 3 * (rand() % (m_map.get_height() / 3));
+        if (!m_map_preprocessor.passable()[m_path_finder.index(y, x)]) {
+          continue;
+        }
+        unsigned int hash = x * m_map.get_width() + y;
+        if (hashes.insert(hash).second) {
+          landing_positions.push_back(MapLocation(Planet::Mars, x, y));
+        }
+      }
+      m_messenger.sendLandingLocations(landing_positions);
+    }
   }
 
   void turn() {
     // TODO handle mars
-    if (m_planet == Planet::Mars) {
-      return;
+    if (m_planet == Planet::Earth) {
+      earthTurn();
+    } else {
+      marsTurn();
+    }
+  }
+
+  list<MapLocation> m_landing_locations;
+
+  void earthTurn() {
+
+    if (m_gc.get_round() == 55) {
+      // read team array
+      m_messenger.readLandingLocations(m_landing_locations);
     }
 
     UnitTally unit_tally;
@@ -62,7 +107,7 @@ class Bot {
 
     const Goal goal(decision_maker.computeGoal(unit_tally, m_map_preprocessor));
 
-    tryUnloadingAllFactories(unit_tally);
+    tryUnloadingAll<Factory>(unit_tally);
 
     // first address construction
     // try adding more factories
@@ -92,6 +137,10 @@ class Bot {
       tryProducing(UnitType::Healer, unit_tally);
     }
 
+    if (goal.go_to_mars) {
+      loadAndLaunchRockets(unit_tally);
+    }
+
     // These seem mutually exclusive. Maybe make an enum.
     if (goal.attack) {
       moveAllUnitsTowardEnemies(unit_tally);
@@ -104,15 +153,31 @@ class Bot {
     collectKarbonite(unit_tally);
   }
 
-  void tryUnloadingAllFactories(UnitTally &unit_tally) {
-    // TODO: for each factory, allow units to submit a request of which direction they'd like to be unloaded in
-    // That way factories can essentially function as open space for pathfinding.
-    for (const unsigned int &factory_id : unit_tally.units_by_type[UnitType::Factory]) {
-      const Unit &factory = unit_tally.ids_to_units.at(factory_id);
-      size_t num_inside = factory.get_structure_garrison().size();
+  void marsTurn() {
+    UnitTally unit_tally;
+    unit_tally.update(m_gc);
+
+    m_map_preprocessor.updateMarsKarboniteEachTurn();
+
+    // do we have any goals on mars (maybe in the future the attack/defence goals)? Just attack everything, right?
+
+    tryUnloadingAll<Rocket>(unit_tally);
+
+    moveAllUnitsTowardEnemies(unit_tally);
+
+    collectKarbonite(unit_tally);
+  }
+
+  template<UnitType StructType>
+  void tryUnloadingAll(UnitTally &unit_tally) {
+    // TODO: for each building, allow units to submit a request of which direction they'd like to be unloaded in
+    // That way structures can essentially function as open space for pathfinding.
+    for (const unsigned int &building_id : unit_tally.units_by_type[StructType]) {
+      const Unit &building = unit_tally.ids_to_units.at(building_id);
+      size_t num_inside = building.get_structure_garrison().size();
       for (int direction_index = 0; direction_index < 8 && num_inside > 0; ++direction_index) {
-        if (m_gc.can_unload(factory_id, directions_shuffled[direction_index])) {
-          m_gc.unload(factory_id, directions_shuffled[direction_index]);
+        if (m_gc.can_unload(building_id, directions_shuffled[direction_index])) {
+          m_gc.unload(building_id, directions_shuffled[direction_index]);
           --num_inside;
         }
       }
@@ -132,8 +197,8 @@ class Bot {
       }
       const Unit &worker = tally.ids_to_units.at(worker_id);
       for (const auto &d : directions_shuffled) {
-        if (m_gc.can_blueprint(worker_id, UnitType::Factory, d)) {
-          m_gc.blueprint(worker_id, UnitType::Factory, d);
+        if (m_gc.can_blueprint(worker_id, StructType, d)) {
+          m_gc.blueprint(worker_id, StructType, d);
           MapLocation target_loc = worker.get_map_location().add(d);
           Unit &blueprint = tally.add(m_gc.sense_unit_at_location(target_loc));
           m_construction_sites_to_workers[blueprint.get_id()].push_back(worker_id);
@@ -349,6 +414,70 @@ class Bot {
     }
   }
 
+  void loadAndLaunchRockets(UnitTally &unit_tally) {
+    // absorb as many things as possible
+    // maybe always try to have 1 worker and 1 attacher tho
+
+    if (m_landing_locations.empty()) {
+      return;
+    }
+
+    auto &rocket_list = unit_tally.units_by_type[UnitType::Rocket];
+    for (auto rocket_iter = rocket_list.cbegin(); rocket_iter != rocket_list.cend();) {
+      const unsigned int &rocket_id = *rocket_iter;
+      const Unit &rocket = m_gc.get_unit(rocket_id);
+      // TODO compute the max garrison correctly
+      unsigned int space_left = 8U - static_cast<unsigned int>(rocket.get_structure_garrison().size());
+      if (space_left != 0) {
+        // could do this more efficiently
+        // also could do this in outward-spiral order. oh well.
+        MapLocation rocket_loc = rocket.get_map_location();
+        auto nearby_allies = m_gc.sense_nearby_units_by_team(rocket_loc, 8, m_team);
+        for (const Unit &nearby : nearby_allies) {
+          if (nearby.is_structure()) {
+            continue;
+          }
+          unsigned int nearby_id = nearby.get_id();
+          if (m_gc.can_load(rocket_id, nearby_id)) {
+            m_gc.load(rocket_id, nearby_id);
+            --space_left;
+          } else {
+            if (pathNaivelyTo(nearby, rocket_loc)) {
+              // update the unit
+              unit_tally.ids_to_units[nearby_id] = m_gc.get_unit(nearby_id);
+            }
+          }
+
+          if (space_left == 0) {
+            break;
+          }
+        }
+      }
+
+      if (space_left == 0) {
+        // TODO: we really ought to re-use or compute more dynamically
+        MapLocation &dest = m_landing_locations.front();
+        m_gc.launch_rocket(rocket_id, dest);
+        m_landing_locations.pop_front();
+
+        // remove from the game
+        // goooolly this is expensive. we should use a set or something instead.
+        const vector<unsigned int> unit_ids = m_gc.get_unit(rocket_id).get_structure_garrison();
+
+        for (const unsigned int &unit_id :unit_ids) {
+          UnitType type = unit_tally.ids_to_units[unit_id].get_unit_type();
+          unit_tally.ids_to_units.erase(unit_id);
+          unit_tally.units_by_type[type].remove(unit_id);
+        }
+        unit_tally.ids_to_units.erase(rocket_id);
+        // erase rocket_id from units_by_type[Rocket] while iterating
+        rocket_list.erase(rocket_iter++);
+      } else {
+        ++rocket_iter;
+      }
+    }
+  }
+
   void moveAllUnitsTowardEnemies(const UnitTally &tally) {
     // TODO: store enemy unit locations in a more abstract way, ie with an EnemyUnitTracker, sort of like the allied UnitTally
     // TODO: make a separate class for this, because a lot of variable state needs to be transferred between enemy-detection code, micro code, and long-distance pathing code
@@ -489,6 +618,74 @@ class Bot {
   }
 
   void tryMoveTowardEnemies(const list<Unit> &enemy_units, const list<const Unit *> units) {
+    if (m_planet == Planet::Earth) {
+      // TODO: detect split map. On split map, spreading out (or at least moving in a circle) gives more mobility.
+      tryMoveToStartingLocations(units);
+    } else {
+      tryMovingInACircle(units);
+    }
+  }
+
+  unique_ptr<list<MapLocation>> m_circle_path;
+  list<MapLocation>::iterator m_circle_iter;
+
+  void tryMovingInACircle(const list<const Unit *> units) {
+    // draw a rectangle 1/3 away from each border
+    // if we're lucky, every edge point will be on the map
+    if (!m_circle_path) {
+      m_circle_path.reset(new list<MapLocation>());
+
+      auto h = static_cast<PathFinder::DistType>(m_map.get_height());
+      auto w = static_cast<PathFinder::DistType>(m_map.get_width());
+
+      PathFinder::DistType left = w / 3;
+      PathFinder::DistType right = 2 * w / 3;
+      PathFinder::DistType top = h / 3;
+      PathFinder::DistType bot = 2 * h / 3;
+      for (unsigned int i = left; i < right; ++i) {
+        if (m_map_preprocessor.passable()[m_path_finder.index(top, i)]) {
+          m_circle_path->push_back(MapLocation(m_planet, i, top));
+        }
+      }
+      for (unsigned int i = top; i < bot; ++i) {
+        if (m_map_preprocessor.passable()[m_path_finder.index(i, right)]) {
+          m_circle_path->push_back(MapLocation(m_planet, right, i));
+        }
+      }
+      for (unsigned int i = right; i > left; --i) {
+        if (m_map_preprocessor.passable()[m_path_finder.index(bot, i)]) {
+          m_circle_path->push_back(MapLocation(m_planet, i, bot));
+        }
+      }
+      for (unsigned int i = bot; i > top; --i) {
+        if (m_map_preprocessor.passable()[m_path_finder.index(i, left)]) {
+          m_circle_path->push_back(MapLocation(m_planet, left, i));
+        }
+      }
+      m_circle_iter = m_circle_path->begin();
+    }
+
+    // we were very unlucky :(
+    if (m_circle_path->empty()) {
+      return;
+    }
+
+    if (m_circle_iter == m_circle_path->end()) {
+      m_circle_iter = m_circle_path->begin();
+    }
+
+    MapLocation target = *m_circle_iter;
+
+    for (const Unit *our_unit : units) {
+      pathTo(*our_unit, target);
+    }
+
+    if (m_gc.get_round() % 4 == 0) {
+      ++m_circle_iter;
+    }
+  }
+
+  void tryMoveToStartingLocations(const list<const Unit *> units) {
     // just pick one of the starting locations and go toward it
     // change it every few turns to mix things up
     const vector<Unit> &initial_units = m_gc.get_starting_planet(m_planet).get_initial_units();
@@ -547,28 +744,28 @@ class Bot {
 
   }
 
-  void pathNaivelyTo(const Unit &unit, const MapLocation &target) {
+  bool pathNaivelyTo(const Unit &unit, const MapLocation &target) {
     if (!unit.is_on_map()) {
       // this unit is still garrisoned.
-      return;
+      return false;
     }
 
     MapLocation unit_loc = unit.get_map_location();
     Direction dir_to_target = unit.get_map_location().direction_to(target);
-    pathInDirection(unit, dir_to_target);
+    return pathInDirection(unit, dir_to_target);
   }
 
-  void pathInDirection(const Unit &unit, const Direction &target_dir) {
+  bool pathInDirection(const Unit &unit, const Direction &target_dir) {
     // TODO: is there a constant for this?
     if (unit.get_movement_heat() >= 10) {
-      return;
+      return false;
     }
     unsigned int id = unit.get_id();
     for (int rot : rotations_sort_of_toward) {
       auto dir = static_cast<Direction>((target_dir + rot) % 8);
       if (m_gc.can_move(id, dir)) {
         m_gc.move_robot(id, dir);
-        break;
+        return true;
       }
     }
   }
@@ -579,6 +776,10 @@ class Bot {
       return;
     }
     for (const auto &worker_id : unit_tally.units_by_type[UnitType::Worker]) {
+      if (!m_gc.has_unit(worker_id)) {
+        // might've died to friendly fire. FIXME
+        continue;
+      }
       const Unit worker = m_gc.get_unit(worker_id);
       if (worker.worker_has_acted()) {
         continue;
@@ -681,6 +882,7 @@ class Bot {
   const PlanetMap &m_map;
   PathFinder m_path_finder;
   MapPreprocessor m_map_preprocessor;
+  Messenger m_messenger;
 
   map<unsigned int, list<unsigned int>> m_construction_sites_to_workers;
   set<unsigned int> m_workers_tasked_to_build;

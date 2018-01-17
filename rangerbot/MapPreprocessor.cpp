@@ -11,10 +11,12 @@
 using namespace bc;
 using std::make_pair;
 using std::map;
+using std::unordered_map;
 using std::min;
 using std::vector;
 using std::cout;
 using std::endl;
+using std::unique_ptr;
 
 void MapPreprocessor::process() {
   // compute passable tiles
@@ -22,6 +24,10 @@ void MapPreprocessor::process() {
 
   // summarize initial karbonite
   summarizeInitialKarbonite(m_summarized_karbonite, m_coarse_tiles_with_karbonite_to_fine_tiles);
+
+  if (m_planet == Planet::Mars) {
+    cacheAsteroidStrikes(m_asteroid_strikes);
+  }
 
   /*LOG("total karbonite: " << m_total_karbonite << endl);
   LOG("full karbonite map:" << endl);
@@ -31,6 +37,38 @@ void MapPreprocessor::process() {
 
   m_path_finder.computeAllPairsShortestPath(m_passable);
   m_path_finder.computeConnectedComponents();
+}
+
+void MapPreprocessor::cacheAsteroidStrikes(
+    unique_ptr<unordered_map<unsigned int, AsteroidStrike>> &asteroid_strikes) {
+  asteroid_strikes.reset(new unordered_map<unsigned int, AsteroidStrike>(
+      m_gc.get_asteroid_pattern().get_all_strikes()));
+}
+
+void MapPreprocessor::updateMarsKarboniteEachTurn() {
+  if (m_asteroid_strikes) {
+    unsigned int round = m_gc.get_round();
+    auto iter = m_asteroid_strikes->find(round);
+    if (iter != m_asteroid_strikes->end()) {
+      const AsteroidStrike &strike = iter->second;
+      MapLocation loc = strike.get_map_location();
+      unsigned int added_karbs = strike.get_karbonite();
+
+      RowCol rowcol(loc.get_y(), loc.get_x());
+      unsigned int &karbs = m_karbonite_on_map[m_path_finder.index(rowcol)];
+      karbs += added_karbs;
+
+      m_total_karbonite += added_karbs;
+
+      unsigned int coarse_index = fineLocationToCoarseIndex(rowcol);
+      unsigned int &coarse_amount = m_summarized_karbonite[coarse_index];
+      // new area!
+      if (coarse_amount == 0) {
+        m_coarse_tiles_with_karbonite_to_fine_tiles[coarse_index] = rowcol;
+      }
+      coarse_amount += added_karbs;
+    }
+  }
 }
 
 void MapPreprocessor::print_karbonite_map() {
@@ -66,12 +104,23 @@ void MapPreprocessor::print_karbonite_summary_map() {
 
 void MapPreprocessor::computePassableAndInitialKarbonite(vector<bool> &passable, vector<unsigned int> &karbonite) {
   passable = vector<bool>(m_rows * m_cols);
-  karbonite = vector<unsigned int>(m_rows * m_cols);
-  for (DistType r = 0; r < m_rows; ++r) {
-    for (DistType c = 0; c < m_cols; ++c) {
-      MapLocation loc(m_planet, c, r);
-      m_passable[m_path_finder.index(r, c)] = m_map.is_passable_terrain_at(loc);
-      m_karbonite_on_map[m_path_finder.index(r, c)] = m_map.get_initial_karbonite_at(loc);
+  if (m_planet == Planet::Earth) {
+    karbonite = vector<unsigned int>(m_rows * m_cols);
+    for (DistType r = 0; r < m_rows; ++r) {
+      for (DistType c = 0; c < m_cols; ++c) {
+        MapLocation loc(m_planet, c, r);
+        m_passable[m_path_finder.index(r, c)] = m_map.is_passable_terrain_at(loc);
+        m_karbonite_on_map[m_path_finder.index(r, c)] = m_map.get_initial_karbonite_at(loc);
+      }
+    }
+  } else {
+    // no initial karbonite on mars
+    karbonite = vector<unsigned int>(m_rows * m_cols, 0);
+    for (DistType r = 0; r < m_rows; ++r) {
+      for (DistType c = 0; c < m_cols; ++c) {
+        MapLocation loc(m_planet, c, r);
+        m_passable[m_path_finder.index(r, c)] = m_map.is_passable_terrain_at(loc);
+      }
     }
   }
 }

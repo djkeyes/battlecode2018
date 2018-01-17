@@ -4,6 +4,8 @@
 #define RANGERBOT_MAPPREPROCESSOR_H
 
 #include <map>
+#include <memory>
+
 #include "bcpp_api/bc.hpp"
 
 #include "PathFinding.h"
@@ -54,11 +56,17 @@ class MapPreprocessor {
 
   const unsigned int &totalKarbonite() const { return m_total_karbonite; }
 
+  void updateMarsKarboniteEachTurn();
+
  private:
   void computePassableAndInitialKarbonite(std::vector<bool> &passable, std::vector<unsigned int> &karbonite);
 
   void summarizeInitialKarbonite(std::vector<unsigned int> &coarse_karbonite,
                                  std::map<DistType, RowCol> &coarse_with_fine_tiles);
+
+  void cacheAsteroidStrikes(std::unique_ptr<std::unordered_map<unsigned int, bc::AsteroidStrike>> &asteroid_strikes);
+
+  std::unique_ptr<std::unordered_map<unsigned int, bc::AsteroidStrike>> m_asteroid_strikes;
 
   void print_karbonite_map();
 

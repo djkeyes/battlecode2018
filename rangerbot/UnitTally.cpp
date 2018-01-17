@@ -11,6 +11,9 @@ void UnitTally::update(GameController &gc) {
     unsigned int unit_id = unit.get_id();
     units_by_type[unit.get_unit_type()].push_back(unit_id);
     ids_to_units.insert(make_pair(unit_id, unit));
+    if (unit.get_location().is_in_space()) {
+      LOG("UNIT IN SPACE!" << std::endl);
+    }
   }
 }
 

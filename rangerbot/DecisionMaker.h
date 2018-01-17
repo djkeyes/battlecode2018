@@ -11,7 +11,7 @@ struct Goal {
 
   Goal() : build_factories(false), build_workers(false), build_knights(false), build_rangers(false),
            build_mages(false), build_healers(false), build_rockets(false), attack(false), contain(false),
-           defend(false) {
+           defend(false), go_to_mars(false) {
 
   }
 
@@ -19,6 +19,11 @@ struct Goal {
     Goal& set_##name()\
     {\
         name = true;\
+        return *this;\
+    }\
+    Goal& disable_##name()\
+    {\
+        name = false;\
         return *this;\
     }
 
@@ -34,11 +39,15 @@ struct Goal {
 
   CHAINED_SETTER(build_healers);
 
+  CHAINED_SETTER(build_rockets);
+
   CHAINED_SETTER(attack);
 
   CHAINED_SETTER(contain);
 
   CHAINED_SETTER(defend);
+
+  CHAINED_SETTER(go_to_mars);
 
   bool build_factories;
   bool build_workers;
@@ -50,6 +59,7 @@ struct Goal {
   bool attack;
   bool contain;
   bool defend;
+  bool go_to_mars;
 };
 
 /*
@@ -68,7 +78,7 @@ class DecisionMaker {
  public:
   DecisionMaker(bc::GameController &gc) : m_gc(gc) {}
 
-  Goal computeGoal(const UnitTally &unit_tally, const MapPreprocessor& map_preprocessor);
+  Goal computeGoal(const UnitTally &unit_tally, const MapPreprocessor &map_preprocessor);
 
  private:
   bc::GameController &m_gc;

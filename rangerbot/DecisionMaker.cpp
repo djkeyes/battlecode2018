@@ -30,7 +30,26 @@ Goal DecisionMaker::computeGoal(const UnitTally &unit_tally, const MapPreprocess
     } else {
       result.set_build_rangers();
     }
+
+    if (unit_tally.getCount(UnitType::Ranger) + unit_tally.getCount(UnitType::Mage) >= 40) {
+      // TODO: if we call get_units_in_space more than once, we should cache it
+      // don't have more than one rocket flying at onces, until it's getting later
+      if (m_gc.get_round() > 600 || m_gc.get_units_in_space().empty()) {
+        // feelin pretty safe
+        if (m_gc.get_research_info().get_level(UnitType::Rocket) > 0
+            && unit_tally.getCount(UnitType::Rocket) < 1) {
+          result.set_build_rockets();
+          result.disable_build_knights();
+          result.disable_build_workers();
+          result.disable_build_rangers();
+          result.disable_build_mages();
+          result.disable_build_healers();
+        }
+        result.set_go_to_mars();
+      }
+    }
   }
+
 
   return result;
 }
