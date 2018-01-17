@@ -22,17 +22,13 @@ Goal DecisionMaker::computeGoal(const UnitTally &unit_tally, const MapPreprocess
     result.set_build_factories();
   }
 
-  // try to mantain 1:2 ranger-to-worker ratio
-  // TODO: compute an upper bound on workers, based on money in map
+  // try to mantain 1:8 ranger-to-mage ratio
   if (unit_tally.getCount(UnitType::Factory) >= 1) {
-    if (unit_tally.getCount(UnitType::Worker) * 2 > unit_tally.getCount(UnitType::Ranger)) {
-      if (unit_tally.getCount(UnitType::Ranger) > 4 * unit_tally.getCount(UnitType::Mage)) {
-        result.set_build_mages();
-      } else {
-        result.set_build_rangers();
-      }
+    // this conditional makes a mage the second spawn. I guess that's cool?
+    if (unit_tally.getCount(UnitType::Ranger) > 8 * unit_tally.getCount(UnitType::Mage)) {
+      result.set_build_mages();
     } else {
-      result.set_build_workers();
+      result.set_build_rangers();
     }
   }
 
