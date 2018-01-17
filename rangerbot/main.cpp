@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <cassert>
 #include <list>
 #include <map>
@@ -59,7 +60,7 @@ class Bot {
     UnitTally unit_tally;
     unit_tally.update(m_gc);
 
-    const Goal goal(decision_maker.computeGoal(unit_tally));
+    const Goal goal(decision_maker.computeGoal(unit_tally, m_map_preprocessor));
 
     tryUnloadingAllFactories(unit_tally);
 
@@ -312,7 +313,10 @@ class Bot {
       }
     }
 
-    tryProducing(UnitType::Worker, unit_tally);
+    // It's way cheaper and faster to replicate, so don't use a factory unless we have to
+    if (unit_tally.units_by_type[UnitType::Worker].empty()) {
+      tryProducing(UnitType::Worker, unit_tally);
+    }
   }
 
   void tryProducing(const UnitType &type, UnitTally &unit_tally) {
@@ -570,6 +574,10 @@ class Bot {
   }
 
   void collectKarbonite(UnitTally &unit_tally) {
+    if (m_map_preprocessor.coarseKarboniteLocationsToAnyFineLocations().empty()) {
+      // map exhausted
+      return;
+    }
     for (const auto &worker_id : unit_tally.units_by_type[UnitType::Worker]) {
       const Unit worker = m_gc.get_unit(worker_id);
       if (worker.worker_has_acted()) {
@@ -580,40 +588,49 @@ class Bot {
       }
 
       MapLocation worker_loc = worker.get_map_location();
-      unsigned int most_karbs = 0;
-      const Direction *best_dir;
-      for (const Direction &dir : directions_incl_center) {
-        MapLocation loc = worker_loc.add(dir);
-        if (!m_path_finder.is_in_map_bounds(loc)) {
-          continue;
-        }
-        unsigned int karbs = m_gc.get_karbonite_at(loc);
-        if (karbs > most_karbs) {
-          most_karbs = karbs;
-          best_dir = &dir;
-        }
-      }
-      if (most_karbs > 0) {
-        m_gc.harvest(worker_id, *best_dir);
+      if (tryHarvestingKarbs(worker.get_worker_harvest_amount(), worker_loc, worker_id)) {
         continue;
       }
 
       // no karbonite nearby? explore!
-      // this is tricky to do in a computational reasonable way, since nearly every tile could have karbonite
-      // we should probably make a coarse karbonite map, then path toward the coarse buckets
-      // for now just move randomly
       if (worker.get_movement_heat() >= 10) {
         continue;
       }
       bool moved = false;
-      for (int num_steps = 2; num_steps <= 4 && !moved; ++num_steps) {
-        for (const Direction &dir : directions_shuffled) {
-          MapLocation target = worker_loc.add_multiple(dir, num_steps);
-          if (m_path_finder.is_in_map_bounds(target) && m_gc.get_karbonite_at(target) > 0) {
-            pathTo(worker, target);
-            moved = true;
-            break;
+      // check the coarse karbonite buckets, and path toward the nearest one
+      const auto &coarse_locs = m_map_preprocessor.coarseKarboniteLocationsToAnyFineLocations();
+      if (coarse_locs.empty()) {
+        // map exhausted
+        break;
+      }
+      PathFinder::RowCol loc(worker_loc.get_y(), worker_loc.get_x());
+      // are we already in a place with karbonite?
+      if (coarse_locs.find(m_map_preprocessor.fineLocationToCoarseIndex(loc)) != coarse_locs.end()) {
+        // if so, try exploring.
+        for (int num_steps = 2; num_steps <= 4 && !moved; ++num_steps) {
+          for (const Direction &dir : directions_shuffled) {
+            MapLocation target = worker_loc.add_multiple(dir, num_steps);
+            if (m_path_finder.is_in_map_bounds(target) && m_map_preprocessor.queryKarboniteIfNonzero(target) > 0) {
+              pathTo(worker, target);
+              moved = true;
+              break;
+            }
           }
+        }
+      } else {
+        // no karbonite near me! find the closest coarse location with karbonite!
+        PathFinder::DistType closest_dist = m_path_finder.infinity();
+        PathFinder::RowCol closest;
+        for (const auto &coarse_and_fine : coarse_locs) {
+          PathFinder::DistType dist = m_path_finder.getDist(loc, coarse_and_fine.second);
+          if (dist < closest_dist) {
+            closest_dist = dist;
+            closest = coarse_and_fine.second;
+          }
+        }
+        if (closest_dist < m_path_finder.infinity()) {
+          pathTo(worker, MapLocation(m_planet, closest.second, closest.first));
+          moved = true;
         }
       }
       if (!moved) {
@@ -626,7 +643,34 @@ class Bot {
         }
       }
 
+      // try again (TODO: only check the newly adjacent tiles)
+      const Unit updated_worker = m_gc.get_unit(worker_id);
+      tryHarvestingKarbs(updated_worker.get_worker_harvest_amount(), updated_worker.get_map_location(), worker_id);
     }
+  }
+
+  bool tryHarvestingKarbs(const unsigned int worker_harvest_amount,
+                          const MapLocation &worker_loc,
+                          const unsigned int &worker_id) {
+    unsigned int most_karbs = 0;
+    const Direction *best_dir;
+    for (const Direction &dir : directions_incl_center) {
+      MapLocation loc = worker_loc.add(dir);
+      if (!m_path_finder.is_in_map_bounds(loc)) {
+        continue;
+      }
+      unsigned int karbs = m_map_preprocessor.queryKarboniteIfNonzero(loc);
+      if (karbs > most_karbs) {
+        most_karbs = karbs;
+        best_dir = &dir;
+      }
+    }
+    if (most_karbs > 0) {
+      m_gc.harvest(worker_id, *best_dir);
+      m_map_preprocessor.updateKarbonite(worker_loc, most_karbs - std::min(most_karbs, worker_harvest_amount), false);
+      return true;
+    }
+    return false;
   }
 
  private:

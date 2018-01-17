@@ -23,11 +23,11 @@ void MapPreprocessor::process() {
   // summarize initial karbonite
   summarizeInitialKarbonite(m_summarized_karbonite, m_coarse_tiles_with_karbonite_to_fine_tiles);
 
-  LOG("total karbonite: " << m_total_karbonite << endl);
+  /*LOG("total karbonite: " << m_total_karbonite << endl);
   LOG("full karbonite map:" << endl);
   print_karbonite_map();
   LOG("summarized karbonite map:" << endl);
-  print_karbonite_summary_map();
+  print_karbonite_summary_map();*/
 
   m_path_finder.computeAllPairsShortestPath(m_passable);
   m_path_finder.computeConnectedComponents();
@@ -113,18 +113,33 @@ void MapPreprocessor::summarizeInitialKarbonite(vector<unsigned int> &coarse_kar
   }
 }
 
-void MapPreprocessor::updateKarbonite(const RowCol &mined_location, unsigned int &mine_amount) {
-  unsigned int &karbs = m_karbonite_on_map[m_path_finder.index(mined_location)];
-  unsigned int reduction = min(karbs, mine_amount);
-  karbs -= reduction;
+void MapPreprocessor::updateKarbonite(const MapLocation &loc, unsigned int observed_amount, bool may_be_unchanged) {
+  RowCol rowcol(loc.get_y(), loc.get_x());
+  unsigned int &karbs = m_karbonite_on_map[m_path_finder.index(rowcol)];
+  unsigned int reduction = karbs - observed_amount;
+  if (may_be_unchanged && reduction == 0) {
+    return;
+  }
+  karbs = observed_amount;
 
-  DistType coarse_row = mined_location.first / m_coarse_rows;
-  DistType coarse_col = mined_location.second / m_coarse_cols;
-  unsigned int coarse_index = coarseIndex(coarse_row, coarse_col);
+  m_total_karbonite -= reduction;
+
+  unsigned int coarse_index = fineLocationToCoarseIndex(rowcol);
   unsigned int &coarse_amount = m_summarized_karbonite[coarse_index];
   coarse_amount -= reduction;
   // this area is mined out!
   if (coarse_amount == 0) {
     m_coarse_tiles_with_karbonite_to_fine_tiles.erase(coarse_index);
+  }
+}
+
+unsigned int MapPreprocessor::queryKarboniteIfNonzero(const MapLocation &loc) {
+  RowCol rowcol(loc.get_y(), loc.get_x());
+  if (m_karbonite_on_map[m_path_finder.index(rowcol)] == 0) {
+    return 0;
+  } else {
+    unsigned int newly_observed_karbs = m_gc.get_karbonite_at(loc);
+    updateKarbonite(loc, newly_observed_karbs, true);
+    return newly_observed_karbs;
   }
 }

@@ -38,12 +38,21 @@ class MapPreprocessor {
     return m_coarse_tiles_with_karbonite_to_fine_tiles;
   }
 
+  DistType fineLocationToCoarseIndex(RowCol rowcol) {
+    return coarseIndex(rowcol.first / karbonite_summary_grid_size, rowcol.second / karbonite_summary_grid_size);
+  }
+
   /*
    * To be called when a user mines karbonite at the map location with coords mined_location.
    */
-  void updateKarbonite(const RowCol &mined_location, unsigned int &mine_amount);
+  void updateKarbonite(const bc::MapLocation &loc, unsigned int observed_amount, bool may_be_unchanged);
 
-  const unsigned int &totalKarbonite() { return m_total_karbonite; }
+  /*
+   * Bloom filter - call to avoid unnecessary calls to get_karbonite_at()
+   */
+  unsigned int queryKarboniteIfNonzero(const bc::MapLocation &loc);
+
+  const unsigned int &totalKarbonite() const { return m_total_karbonite; }
 
  private:
   void computePassableAndInitialKarbonite(std::vector<bool> &passable, std::vector<unsigned int> &karbonite);

@@ -5,6 +5,7 @@
 
 #include "bcpp_api/bc.hpp"
 #include "UnitTally.h"
+#include "MapPreprocessor.h"
 
 struct Goal {
 
@@ -67,7 +68,7 @@ class DecisionMaker {
  public:
   DecisionMaker(bc::GameController &gc) : m_gc(gc) {}
 
-  Goal computeGoal(const UnitTally &unit_tally);
+  Goal computeGoal(const UnitTally &unit_tally, const MapPreprocessor& map_preprocessor);
 
  private:
   bc::GameController &m_gc;
