@@ -17,7 +17,7 @@ class SandboxedPlayer(AbstractPlayer):
 
         super().__init__(socket_file, working_dir, local_dir, s3_bucket, s3_key, player_key, player_mem_limit, player_cpu)
         self.docker = docker_client
-        
+
     def stream_logs(self, stdout=True, stderr=True, line_action=lambda line: print(line.decode())):
         threading.Thread(target=_stream_logs, args=(self.container, stdout, stderr, line_action)).start()
 
@@ -59,17 +59,7 @@ class SandboxedPlayer(AbstractPlayer):
             auto_remove = True,
             network_disabled=True
         )
-
-        # wait for suspender script to connect from player host
-        connection, _ = self.suspender_socket.accept()
-        self.suspender_connection = connection
-        self.suspender_file = self.suspender_connection.makefile('rw', 64)
-
-        login = next(self.suspender_file)
-
-        assert int(login.strip()) == self.player_key, 'mismatched suspension login: {} != {}'.format(repr(login.strip()), repr(self.player_key))
-
-        #cap_drop=['chown, dac_override, fowner, fsetid, kill, setgid, setuid, setpcap, net_bind_service, net_raw, sys_chroot, mknod, audit_write, setfcap'],cpu_period=100000,cpu_quota=self.player_cpu_fraction*100000,
+        self.suspender_connection = None
 
     def guess_language(self):
         procs = self.container.top()['Processes']
@@ -85,23 +75,37 @@ class SandboxedPlayer(AbstractPlayer):
                 return "mono"
         return "c"
 
+    def suspinit(self):
+        if self.suspender_connection == None:
+            try:
+                # wait for suspender script to connect from player host
+                connection, _ = self.suspender_socket.accept()
+                self.suspender_connection = connection
+                self.suspender_file = self.suspender_connection.makefile('rw', 64)
+                login = next(self.suspender_file)
+                assert int(login.strip()) == self.player_key, 'mismatched suspension login: {} != {}'.format(repr(login.strip()), repr(self.player_key))
+            except Exception as e:
+                print('suspender timed out', e)
+
     def pause(self):
+        self.suspinit()
         # see suspender.py
         # we don't go through docker.suspend or docker.exec because they're too slow (100ms)
-        self.suspender_file.write('suspend\n')
-        self.suspender_file.flush()
         try:
+            self.suspender_file.write('suspend\n')
+            self.suspender_file.flush()
             response = next(self.suspender_file)
             assert response.strip() == 'ack', response.strip() + ' != ack'
         except Exception as e:
             print("SUSPENSION FAILED!!! SUSPICIOUS:", e)
 
     def unpause(self, timeout=None):
+        self.suspinit()
         # see suspender.py
         # we don't go through docker.suspend or docker.exec because they're too slow (100ms)
-        self.suspender_file.write('resume\n')
-        self.suspender_file.flush()
         try:
+            self.suspender_file.write('resume\n')
+            self.suspender_file.flush()
             response = next(self.suspender_file)
             assert response.strip() == 'ack', response.strip() + ' != ack'
         except Exception as e:
@@ -112,7 +116,7 @@ class SandboxedPlayer(AbstractPlayer):
             self.container.remove(force=True)
         except Exception as e:
             pass
-        
+
         try:
             self.suspender_socket.close()
         except Exception as e:
